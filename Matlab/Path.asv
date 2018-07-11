@@ -8,217 +8,488 @@
 % ************************************************** %
 
 % Global Variables
-global BOARD_ROWS;  BOARD_ROWS  = 6;    % How many rows    are on the board
-global BOARD_COLS;  BOARD_COLS  = 6;    % How many columns are on the board
-global ROBOT;       ROBOT       = 1;    % Which number denotes the robot
-global DESTINATION; DESTINATION = -1;   % Which number denotes the destination
-global DATA_LEN;    DATA_LEN    = 10000; % How much data should be generated from generateData()
+global BOARD_ROWS;  BOARD_ROWS  = 6;     % How many rows    are on the board
+global BOARD_COLS;  BOARD_COLS  = 6;     % How many columns are on the board
+global ROBOT;       ROBOT       = 1;     % Which number denotes the robot
+global DESTINATION; DESTINATION = -1;    % Which number denotes the destination
+global DATA_LEN;    DATA_LEN    = 1000;  % How much data should be generated from generateData()
+global TEST_LEN;    TEST_LEN    = 1000;  % How many random instances of data should be generated to test accuracy
+global ANIM_DELAY;  ANIM_DELAY  = .25;   % How long the delay between animation frames is
+ 
+% Delta Method
+% model = delta("discr", false); % Get a Delta Method model without popularity and using Discriminant Analysis
+% animateModel(model, 50);       % Animate 50 paths of the model
 
-% Train Model
-train();
+% Delta Iteration Method
+% models = deltaIteration("tree");
+% models = deltaIteration("knn");
+% models = deltaIteration("discr");
+models = deltaIteration("nb");
+%animateModelIter(models, 50);
 
-function model = train()
+% Prediction Iteration Method
+% models = predictionIteration("discr");
+% animateModelIter(models, 50);
+
+function models = deltaIteration(modelType)
     % Variables
     global DATA_LEN;
     global BOARD_ROWS;
     global BOARD_COLS;
     global ROBOT;
     global DESTINATION;
-    valid = false; 
-    [robotRows, robotCols, destRows, destCols, moves] = generateData();
+    tic; % Begin stop watch for timing
+    trainTime = 0.0; % Time it takes to train the model  
+    modelAccuracy = 0.0;
+    [robotRows, robotCols, destRows, destCols, moves] = generateData(DATA_LEN);
+    rr = {robotRows'};
+    rc = {robotCols'};
+    dr = {destRows'};
+    dc = {destCols'};
+    m  = {moves'};
+    
+    % Train Initial Model
+    iteration = 1; % Current model iteration
+    data = table(rr{iteration}, rc{iteration}, dr{iteration}, dc{iteration}, m{iteration});
+    data.Properties.VariableNames = {'RobotRow' 'RobotCol' 'DestRow' 'DestCol' 'Move'};
+    model  = getModel(modelType, data);
+    models = {model}; % Create cell array of models
+    
+    noMoves = 1; % How many times "no move" appears in moves[]
+    % Keep checking previous iterations until there is no "no move"
+    while(noMoves ~= 0)
+        iteration = iteration + 1; % Begin new iteration
+        fprintf("No Moves: %d     Iteration: %d\n",noMoves, iteration - 1);
+        
+        % Copy previous iteration data 
+        rr{iteration} = rr{iteration - 1};
+        rc{iteration} = rc{iteration - 1};
+        dr{iteration} = dr{iteration - 1};
+        dc{iteration} = dc{iteration - 1};
+        m{iteration}  = m{iteration  - 1};
+        
+        % Check for patterns in previous iteration
+        noMoves = 0;
+        for i = 1:DATA_LEN
+            if m{iteration}(i) == "no move"
+                noMoves = noMoves + 1;
+                for j = 1:DATA_LEN
+                    if(m{iteration - 1}(j) ~= "no move")
+                        if (rr{iteration}(i)     + 1 - dr{iteration}(i)     == ...
+                            rr{iteration - 1}(j)     - dr{iteration - 1}(j) && ...
+                            rc{iteration}(i)         - dc{iteration}(i)     == ...
+                            rc{iteration - 1}(j)     - dc{iteration - 1}(j))
+                            m{iteration}(i) = "down";
+                            break;
+                        end
+                        if (rr{iteration}(i)    - 1 - dr{iteration}(i)     == ...
+                            rr{iteration - 1}(j)    - dr{iteration - 1}(j) && ...
+                            rc{iteration}(i)        - dc{iteration}(i)     == ...
+                            rc{iteration - 1}(j)    - dc{iteration - 1}(j))
+                            m{iteration}(i) = "up";
+                            break;
+                        end
+                        if (rr{iteration}(i)         - dr{iteration}(i)     == ...
+                            rr{iteration - 1}(j)     - dr{iteration - 1}(j) && ...
+                            rc{iteration}(i)     + 1 - dc{iteration}(i)     == ...
+                            rc{iteration - 1}(j)     - dc{iteration - 1}(j))
+                            m{iteration}(i) = "right";
+                            break;
+                        end
+                        if (rr{iteration}(i)         - dr{iteration}(i)     == ...
+                            rr{iteration - 1}(j)     - dr{iteration - 1}(j) && ...
+                            rc{iteration}(i)     - 1 - dc{iteration}(i)     == ...
+                            rc{iteration - 1}(j)     - dc{iteration - 1}(j))
+                            m{iteration}(i) = "left";
+                            break;
+                        end
+                    end
+                end
+            end
+        end
+        
+        % Create and push new model using updated data
+        data = table(rr{iteration}, rc{iteration}, dr{iteration}, dc{iteration}, m{iteration});
+        data.Properties.VariableNames = {'RobotRow' 'RobotCol' 'DestRow' 'DestCol' 'Move'};
+        model  = getModel(modelType, data);
+        models{iteration} = model; % Push model
+    end
+    
+    trainTime = toc; % Model trained, clock in timer
+    
+    modelAccuracy = calcAccuracyIter(models); % Test accuracy of model
+    
+    % Data logging info
+    fprintf("%d,%d,%d,%s,%.2f,%.2f\n", BOARD_ROWS, BOARD_COLS, DATA_LEN, modelType, trainTime, (modelAccuracy*100));
+end
+
+function models = predictionIteration(modelType)
+    % Variables
+    global DATA_LEN;
+    global BOARD_ROWS;
+    global BOARD_COLS;
+    global ROBOT;
+    global DESTINATION;
+    tic; % Begin stop watch for timing
+    trainTime = 0.0; % Time it takes to train the model  
+    modelAccuracy = 0.0;
+    [robotRows, robotCols, destRows, destCols, moves] = generateData(DATA_LEN);
+    
+    % Train Initial Model
+    data = table(robotRows', robotCols', destRows', destCols', moves');
+    data.Properties.VariableNames = {'RobotRow' 'RobotCol' 'DestRow' 'DestCol' 'Move'};
+    model  = getModel(modelType, data);
+    models = {model}; % Create cell array of models
+    
+    noMoves = 1;
+    iteration = 1;
+    while noMoves ~= 0
+        [robotRows, robotCols, destRows, destCols, moves] = generateData(DATA_LEN);
+        for i = 1:DATA_LEN
+            if moves(i) == "no move"
+                moves(i) = checkPreviousIter(models{iteration},robotRows(i),robotCols(i),destRows(i),destCols(i));
+            end
+        end
+        
+        % Check how many "no move"s there are after checkSurrounging
+        noMoves = 0;
+        for i = 1:DATA_LEN
+            if moves(i) == "no move"
+                noMoves = noMoves + 1;
+            end
+        end
+        
+        % fprintf("%d / %d\n", noMoves, DATA_LEN);
+        
+        data = table(robotRows', robotCols', destRows', destCols', moves');
+        data.Properties.VariableNames = {'RobotRow' 'RobotCol' 'DestRow' 'DestCol' 'Move'};
+        model = getModel(modelType, data);
+        iteration = iteration + 1;
+        models{iteration} = model;
+    end
+    
+    trainTime = toc; % Model trained, clock in timer
+    
+    modelAccuracy = calcAccuracyIter(models); % Test accuracy of model
+    
+    % Data logging info
+    fprintf("%d,%d,%d,%s,%.2f,%.2f\n", BOARD_ROWS, BOARD_COLS, DATA_LEN, modelType, trainTime, (modelAccuracy*100));
+end
+
+% Trains a model based on the delta method of previous iterations
+% Uses additional popularity method if 'popularity' is set to true
+function model = delta(modelType, popularity)
+    % Variables
+    global DATA_LEN;
+    global BOARD_ROWS;
+    global BOARD_COLS;
+    global ROBOT;
+    global DESTINATION;
+    tic; % Begin stop watch for timing
+    trainTime = 0.0; % Time it takes to train the model  
+    modelAccuracy = 0.0;
+    valid = false;
+    [robotRows, robotCols, destRows, destCols, moves] = generateData(DATA_LEN);
     
     % Keep checking previous iterations until there is no "no move"
     while(~valid)
         % Check previous iterations
         numNoMoves = 0; % How many times "no move" appears in moves[]
         for i = 1:DATA_LEN
-            if(rem(i, 100) == 0)
-               fprintf("%d / %d\n", i, DATA_LEN); 
-            end
+            % if(rem(i, 100) == 0)
+            %    fprintf("%d / %d\n", i, DATA_LEN); 
+            % end
             if(moves(i) == "no move")
                 numNoMoves = numNoMoves + 1;
                 % Count how many times each suggested move comes up
-                % to pick the best
-                % up    = 0; 
-                % down  = 0;
-                % left  = 0;
-                % right = 0;
+                % to pick the best (used only if 'popularity' is true
+                up    = 0; 
+                down  = 0;
+                left  = 0;
+                right = 0;
                 for j = 1:DATA_LEN
-                    
                     if(moves(j) ~= "no move")
                         if (robotRows(i) + 1 - destRows(i) == ...
                             robotRows(j)     - destRows(j) && ...
                             robotCols(i)     - destCols(i) == ...
                             robotCols(j)     - destCols(j))
-                            moves(i) = "down";
-                            break;
+                            if popularity
+                                down = down + 1;
+                            else
+                                moves(i) = "down";
+                                break;
+                            end
                         end
                         if (robotRows(i) - 1 - destRows(i) == ...
                             robotRows(j)     - destRows(j) && ...
                             robotCols(i)     - destCols(i) == ...
                             robotCols(j)     - destCols(j))
-                            moves(i) = "up";
-                            break;
-                            % up = up + 1;
+                            if popularity
+                                up = up + 1;
+                            else
+                                moves(i) = "up";
+                                break;
+                            end
                         end
                         if (robotRows(i)     - destRows(i) == ...
                             robotRows(j)     - destRows(j) && ...
                             robotCols(i) + 1 - destCols(i) == ...
                             robotCols(j)     - destCols(j))
-                            moves(i) = "right";
-                            break;
-                            % right = right + 1;
+                            if popularity
+                                right = right + 1;
+                            else
+                                moves(i) = "right";
+                                break;
+                            end
                         end
                         if (robotRows(i)     - destRows(i) == ...
                             robotRows(j)     - destRows(j) && ...
                             robotCols(i) - 1 - destCols(i) == ...
                             robotCols(j)     - destCols(j))
-                            moves(i) = "left";
-                            break;
-                            % left = left + 1;
+                            if popularity
+                                left = left + 1;
+                            else
+                                moves(i) = "left";
+                                break;
+                            end
                         end
                     end
                 end
-               
+                % fprintf("up: %d     down: %d     left: %d     right: %d\n", up, down, left, right);
                 % Find most common suggested pattern
-                % if (up >= down && up >= left && up >= right)
-                %     moves(i) = "up";
-                % end
-                % if (down >= up && down >= left && down >= right)
-                %     moves(i) = "down";
-                % end
-                % if (left >= up && left >= down && left >= right)
-                %     moves(i) = "left";
-                % end
-                % if (right >= up && right >= down && right >= left)
-                %     moves(i) = "right";
-                % end
+                if (up ~= 0 && up >= down && up >= left && up >= right)
+                    % fprintf("up\n");
+                    moves(i) = "up"
+                end
+                if (down ~= 0 && down >= up && down >= left && down >= right)
+                    % fprintf("down\n");
+                    moves(i) = "down"
+                end
+                if (left ~= 0 && left >= up && left >= down && left >= right)
+                    % fprintf("left\n");
+                    moves(i) = "left"
+                end
+                if (right ~= 0 && right >= up && right >= down && right >= left)
+                    % fprintf("right\n");
+                    moves(i) = "right"
+                end
             end
         end
-        fprintf("'No Moves' Left: %d\n", numNoMoves);
+        % fprintf("'No Moves' Left: %d\n", numNoMoves);
         valid = numNoMoves == 0;
     end
     
     % Now that every spot has a classification, we can train the model
     data = table(robotRows', robotCols', destRows', destCols', moves');
     data.Properties.VariableNames = {'RobotRow' 'RobotCol' 'DestRow' 'DestCol' 'Move'};
-    model = fitcnb(data, 'Move');
+    model = getModel(modelType, data);
+    trainTime = toc; % Model trained, clock in timer
     
+    % Test accuracy of model
+    modelAccuracy = calcAccuracy(model);
+    
+    % Data logging info
+    % fprintf("Board: %dx%d\tTrain Data Length: %d\tModel Type: %s\tTrain Time: %d\tAccuracy: %d", BOARD_ROWS, BOARD_COLS, DATA_LEN, modelType, trainTime, modelAccuracy);
+    fprintf("%d,%d,%d,%s,%.2f,%.2f\n", BOARD_ROWS, BOARD_COLS, DATA_LEN, modelType, trainTime, (modelAccuracy*100));
+end
+
+% Show animation of a model using model cell array iteration
+function animateModelIter(models, numToShow)
+    global BOARD_ROWS;
+    global BOARD_COLS;
+    global ROBOT;
+    global DESTINATION;
+    global ANIM_DELAY;
     pause on;
-    for i = 1:DATA_LEN
-        if(moves(i) ~= "no move")
-            valid = false;
-            board = zeros(BOARD_ROWS, BOARD_COLS);
-            board(robotRows(i), robotCols(i)) = ROBOT;
-            board(destRows(i),  destCols(i))  = DESTINATION;
+    [robotRows, robotCols, destRows, destCols, moves] = generateData(numToShow);
+    [x, modelsLen] = size(models);
+
+    for i = 1:numToShow
+        valid = false;
+        board = zeros(BOARD_ROWS, BOARD_COLS);
+        board(robotRows(i), robotCols(i)) = ROBOT;
+        board(destRows(i),  destCols(i))  = DESTINATION;
+        showBoard(board);
+        pause(.5);
+        x = 0;
+        while(~valid)
+            [rr, rc, dr, dc] = findCoords(board);
+            features = [rr, rc, dr, dc];
+            m = "no move";
+            for iter = 1:modelsLen
+                m = predict(models{iter}, features);
+                if m ~= "no move"
+                    break;
+                end
+            end
+            board = moveRobot(board, m);
             showBoard(board);
-            pause(.5);
-            x = 0;
-            while(~valid)
-                [rr, rc, dr, dc] = findCoords(board);
-                features = [rr, rc, dr, dc];
-                m = predict(model, features);
-                board = moveRobot(board, m);
-                showBoard(board);
-                pause(.5);
-                x = x + 1;
-                
-                % Update Valid
-                found = false;
-                for row = (1:BOARD_ROWS)
-                    for col = (1:BOARD_COLS)
-                        if (board(row,col) == DESTINATION)
-                            found = true;
-                        end
+            pause(ANIM_DELAY);
+            x = x + 1;
+
+            % Update Valid
+            found = false;
+            for row = (1:BOARD_ROWS)
+                for col = (1:BOARD_COLS)
+                    if (board(row,col) == DESTINATION)
+                        found = true;
                     end
                 end
-                valid = ~found;
-                if x > 15
-                    valid = true;
+            end
+            valid = ~found;
+            if x > BOARD_ROWS + BOARD_COLS
+                valid = true;
+            end
+        end
+    end
+end
+
+% Show animation of a model running
+function animateModel(model, numToShow)
+    global BOARD_ROWS;
+    global BOARD_COLS;
+    global ROBOT;
+    global DESTINATION;
+    global ANIM_DELAY;
+    pause on;
+    [robotRows, robotCols, destRows, destCols, moves] = generateData(numToShow);
+
+    for i = 1:numToShow
+        valid = false;
+        board = zeros(BOARD_ROWS, BOARD_COLS);
+        board(robotRows(i), robotCols(i)) = ROBOT;
+        board(destRows(i),  destCols(i))  = DESTINATION;
+        showBoard(board);
+        pause(ANIM_DELAY);
+        x = 0;
+        while(~valid)
+            [rr, rc, dr, dc] = findCoords(board);
+            features = [rr, rc, dr, dc];
+            m = predict(model, features);
+            board = moveRobot(board, m);
+            showBoard(board);
+            pause(ANIM_DELAY);
+            x = x + 1;
+
+            % Update Valid
+            found = false;
+            for row = (1:BOARD_ROWS)
+                for col = (1:BOARD_COLS)
+                    if (board(row,col) == DESTINATION)
+                        found = true;
+                    end
+                end
+            end
+            valid = ~found;
+            if x > BOARD_ROWS + BOARD_COLS
+                valid = true;
+            end
+        end
+    end
+end
+
+% Returns the model based on the passed modelType
+function model = getModel(modelType, data)
+    if(modelType     == "nb")       % Naive Bayes
+        model = fitcnb(data,     'Move');
+    elseif(modelType == "tree")     % Tree
+        model = fitctree(data,   'Move');
+    elseif(modelType == "knn")      % K Nearest Number
+        model = fitcknn(data,    'Move');
+    elseif(modelType == "discr")    % Discriminant
+        model = fitcdiscr(data,  'Move');
+    elseif(modelType == "linear")   % Linear
+        model = fitclinear(data, 'Move');
+    elseif(modelType == "kernel")   % Gaussian Kernel
+        model = fitckernel(data, 'Move');
+    end
+end
+
+% Calc accuracy of a model using cell array of models
+function accuracy = calcAccuracyIter(models)
+    % Variables
+    global TEST_LEN;
+    global ROBOT;
+    global DESTINATION;
+    global BOARD_ROWS;
+    global BOARD_COLS;
+    numCorrect = 0;
+    [robotRows, robotCols, destRows, destCols] = generateData(TEST_LEN);
+    [x, modelsLen] = size(models);
+
+    for i = 1:TEST_LEN
+        % Initialize board
+        board = zeros(BOARD_ROWS, BOARD_COLS);
+        board(robotRows(i), robotCols(i)) = ROBOT;
+        board(destRows(i),  destCols(i))  = DESTINATION;
+        rr = robotRows(i); rc = robotCols(i);
+        dr = destRows(i);  dc = destCols(i);
+        next = false; % Becomes true when either robot reaches the dest or too many moves pass
+        numMoves = 0;
+        maxMoves = BOARD_ROWS + BOARD_COLS;
+        while(~next) % Loop through moves until either the robot makes it to dest or gets stuck
+            features = [rr, rc, dr, dc];
+            move = "no move";
+            for iter = 1:modelsLen
+                move = predict(models{iter}, features);
+                if(move ~= "no move")
+                    break; 
+                end
+            end 
+            if(move == "no move")
+                next = true;
+            else
+                board = moveRobot(board, move);
+                numMoves = numMoves + 1;
+                [rr, rc, dr, dc] = findCoords(board);
+                if(dr == -1 && dc == -1) % Robot made it to dest
+                    next = true;
+                    numCorrect = numCorrect + 1;
+                elseif numMoves > maxMoves
+                    next = true;
                 end
             end
         end
     end
-    
-    
-    
-    %{
+    accuracy = numCorrect / TEST_LEN;
+end
 
-    % Train Initial Model
-    [robotRows, robotCols, destRows, destCols, moves] = generateData();
-    data = table(robotRows', robotCols', destRows', destCols', moves');
-    data.Properties.VariableNames = {'RobotRow' 'RobotCol' 'DestRow' 'DestCol' 'Move'};
-    model = fitcknn(data, 'Move');
-    
-    for iter = 2:MAX_ITER
-        [robotRows, robotCols, destRows, destCols, moves] = generateData();
-        cnt1 = 0;
-        for i = 1:DATA_LEN
-           if moves(i) == "no move"
-              cnt1 = cnt1 + 1; 
-           end
-           % if moves(i) == "no move"
-           %    cnt1 = cnt1 + 1;
-           %    moves(i) = checkPreviousIter(model,robotRows(i),robotCols(i),destRows(i),destCols(i),BOARD_ROWS,BOARD_COLS);
-           % end
-        end
-        
-        % Check previous iterations
-        moves = checkSurrounding(robotRows, robotCols, destRows, destCols, moves);
-        
-        % Check how many "no move"s there are after checkSurrounging
-        cnt2 = 0;
-        for i = 1:DATA_LEN
-           if moves(i) == "no move"
-              cnt2 = cnt2 + 1;
-           end
-        end
-        
-        fprintf("---------\niter: %d\ncnt1: %d\ncnt2: %d\n", iter, cnt1, cnt2);
-        
-        data = table(robotRows', robotCols', destRows', destCols', moves');
-        data.Properties.VariableNames = {'RobotRow' 'RobotCol' 'DestRow' 'DestCol' 'Move'};
-        model = fitcknn(data, 'Move');
-        
-        if cnt2 == 0
-            pause on;
-            for i = 1:DATA_LEN
-                if(moves(i) ~= "no move")
-                    valid = false;
-                    board = zeros(BOARD_ROWS, BOARD_COLS);
-                    board(robotRows(i), robotCols(i)) = ROBOT;
-                    board(destRows(i),  destCols(i))  = DESTINATION;
-                    showBoard(board);
-                    pause(.5);
-                    x = 0;
-                    while(~valid)
-                        [rr, rc, dr, dc] = findCoords(board);
-                        features = [rr, rc, dr, dc];
-                        m = predict(model, features);
-                        board = moveRobot(board, m);
-                        showBoard(board);
-                        pause(.5);
-                        x = x + 1;
+% Test how accurate a given model is
+function accuracy = calcAccuracy(model)
+    % Variables
+    global TEST_LEN;
+    global ROBOT;
+    global DESTINATION;
+    global BOARD_ROWS;
+    global BOARD_COLS;
+    numCorrect = 0;
+    [robotRows, robotCols, destRows, destCols] = generateData(TEST_LEN);
 
-                        % Update Valid
-                        found = false;
-                        for row = (1:BOARD_ROWS)
-                            for col = (1:BOARD_COLS)
-                                if (board(row,col) == DESTINATION)
-                                  found = true;
-                                end
-                            end
-                        end
-                        valid = ~found;
-                        if x > 15
-                            valid = true; 
-                        end
-                    end
-                end
+    for i = 1:TEST_LEN
+        % Initialize board
+        board = zeros(BOARD_ROWS, BOARD_COLS);
+        board(robotRows(i), robotCols(i)) = ROBOT;
+        board(destRows(i),  destCols(i))  = DESTINATION;
+        rr = robotRows(i); rc = robotCols(i);
+        dr = destRows(i);  dc = destCols(i);
+        next = false; % Becomes true when either robot reaches the dest or too many moves pass
+        numMoves = 0;
+        maxMoves = BOARD_ROWS + BOARD_COLS;
+        while(~next) % Loop through moves until either the robot makes it to dest or gets stuck
+            features = [rr, rc, dr, dc];
+            move = predict(model, features);
+            board = moveRobot(board, move);
+            numMoves = numMoves + 1;
+            [rr, rc, dr, dc] = findCoords(board);
+            if(dr == -1 && dc == -1) % Robot made it to dest
+                next = true;
+                numCorrect = numCorrect + 1;
+            elseif numMoves > maxMoves
+                next = true;
             end
         end
-    end 
-    %}
+    end
+    accuracy = numCorrect / TEST_LEN;
 end
 
 function [robotRow, robotCol, destRow, destCol] = findCoords(board)
@@ -227,19 +498,23 @@ function [robotRow, robotCol, destRow, destCol] = findCoords(board)
     global BOARD_COLS;
     global ROBOT;
     global DESTINATION;
-    
+    robotRow = -1;
+    robotCol = -1;
+    destRow  = -1;
+    destCol  = -1;
+
     % Get x,y for the robot and destination
     for row = (1:BOARD_ROWS)
-       for col = (1:BOARD_COLS)
-           if (board(row,col) == ROBOT)
-               robotRow = row;
-               robotCol = col;
-           end
-           if (board(row,col) == DESTINATION)
-               destRow  = row;
-               destCol  = col;
-           end
-       end
+        for col = (1:BOARD_COLS)
+            if (board(row,col) == ROBOT)
+                robotRow = row;
+                robotCol = col;
+            end
+            if (board(row,col) == DESTINATION)
+                destRow  = row;
+                destCol  = col;
+            end
+        end
     end
 end
 
@@ -275,7 +550,7 @@ function move = checkPreviousIter(model, robotRow, robotCol, destRow, destCol)
     global BOARD_COLS;
     move = "no move"; % Default value
     
-    if(robotRow + 1 <= BOARD_ROWS)
+    if(move == "no move" && robotRow + 1 <= BOARD_ROWS)
        features = [robotRow+1, robotCol, destRow, destCol];
        predictedMove = predict(model, features);
        if(predictedMove ~= "no move")
@@ -283,7 +558,7 @@ function move = checkPreviousIter(model, robotRow, robotCol, destRow, destCol)
        end 
     end
     
-    if(robotRow - 1 >= 1)
+    if(move == "no move" && robotRow - 1 >= 1)
        features = [robotRow-1, robotCol, destRow, destCol];
        predictedMove = predict(model, features);
        if(predictedMove ~= "no move")
@@ -291,7 +566,7 @@ function move = checkPreviousIter(model, robotRow, robotCol, destRow, destCol)
        end 
     end
     
-    if(robotCol + 1 <= BOARD_COLS)
+    if(move == "no move" && robotCol + 1 <= BOARD_COLS)
        features = [robotRow, robotCol+1, destRow, destCol];
        predictedMove = predict(model, features);
        if(predictedMove ~= "no move")
@@ -299,7 +574,7 @@ function move = checkPreviousIter(model, robotRow, robotCol, destRow, destCol)
        end 
     end
     
-    if(robotCol - 1 >= 1)
+    if(move == "no move" && robotCol - 1 >= 1)
        features = [robotRow, robotCol-1, destRow, destCol];
        predictedMove = predict(model, features);
        if(predictedMove ~= "no move")
@@ -309,19 +584,18 @@ function move = checkPreviousIter(model, robotRow, robotCol, destRow, destCol)
 end
 
 % Generates training data (size set at global level)
-function [robotRows, robotCols, destRows, destCols, classifications] = generateData()
+function [robotRows, robotCols, destRows, destCols, classifications] = generateData(numToGen)
     % Variables
     global ROBOT;
     global DESTINATION;
     global BOARD_ROWS; 
     global BOARD_COLS;
-    global DATA_LEN;
     robotRows = [0]; robotCols = [0];
     destRows  = [0]; destCols  = [0];
     classStrings = [""];
     
     % Generate samples of data
-    for i = 1:DATA_LEN
+    for i = 1:numToGen
         board = zeros(BOARD_ROWS, BOARD_COLS);
         board = placeDot(board, ROBOT);
         board = placeDot(board, DESTINATION);
@@ -418,3 +692,62 @@ function board = placeDot(board, num)
        end
     end
 end
+
+%{
+%     % Train Initial Model
+%     data = table(robotRows', robotCols', destRows', destCols', moves');
+%     data.Properties.VariableNames = {'RobotRow' 'RobotCol' 'DestRow' 'DestCol' 'Move'};
+%     if(modelType     == "nb")       % Naive Bayes
+%         model = fitcnb(data,     'Move');
+%     elseif(modelType == "tree")     % Tree
+%         model = fitctree(data,   'Move');
+%     elseif(modelType == "knn")      % K Nearest Number
+%         model = fitcknn(data,    'Move');
+%     elseif(modelType == "discr")    % Discriminant
+%         model = fitcdiscr(data,  'Move');
+%     end
+%     models = {model};
+%     
+%     noMoves = 1;
+%     iteration = 1;
+%     while noMoves ~= 0
+%         [robotRows, robotCols, destRows, destCols, moves] = generateData(DATA_LEN);
+%         for i = 1:DATA_LEN
+%             if moves(i) == "no move"
+%                 moves(i) = checkPreviousIter(models{iteration},robotRows(i),robotCols(i),destRows(i),destCols(i));
+%             end
+%         end
+%         
+%         % Check how many "no move"s there are after checkSurrounging
+%         noMoves = 0;
+%         for i = 1:DATA_LEN
+%             if moves(i) == "no move"
+%                 noMoves = noMoves + 1;
+%             end
+%         end
+%         
+%         fprintf("%d / %d\n", noMoves, DATA_LEN);
+%         
+%         data = table(robotRows', robotCols', destRows', destCols', moves');
+%         data.Properties.VariableNames = {'RobotRow' 'RobotCol' 'DestRow' 'DestCol' 'Move'};
+%         if(modelType     == "nb")       % Naive Bayes
+%             models{iteration + 1} = fitcnb(data,     'Move');
+%         elseif(modelType == "tree")     % Tree
+%             models{iteration + 1} = fitctree(data,   'Move');
+%         elseif(modelType == "knn")      % K Nearest Number
+%             models{iteration + 1} = fitcknn(data,    'Move');
+%         elseif(modelType == "discr")    % Discriminant
+%             models{iteration + 1} = fitcdiscr(data,  'Move');
+%         end
+%         iteration = iteration + 1;
+%     end
+%     
+%     trainTime = toc; % Model trained, clock in timer
+%     
+%     % Test accuracy of model
+%     modelAccuracy = calcAccuracyIter(models);
+%     
+%     % Data logging info
+%     % fprintf("Board: %dx%d\tTrain Data Length: %d\tModel Type: %s\tTrain Time: %d\tAccuracy: %d", BOARD_ROWS, BOARD_COLS, DATA_LEN, modelType, trainTime, modelAccuracy);
+%     fprintf("%d,%d,%d,%s,%.2f,%.2f\n", BOARD_ROWS, BOARD_COLS, DATA_LEN, modelType, trainTime, (modelAccuracy*100));
+%}
