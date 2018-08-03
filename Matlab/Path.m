@@ -8,18 +8,21 @@
 % ************************************************** %
 
 % Global Variables
-global BOARD_ROWS;  BOARD_ROWS  = 10;     % How many rows    are on the board
-global BOARD_COLS;  BOARD_COLS  = 10;     % How many columns are on the board
+global BOARD_ROWS;  BOARD_ROWS  = 100;     % How many rows    are on the board
+global BOARD_COLS;  BOARD_COLS  = 100;     % How many columns are on the board
 global ROBOT;       ROBOT       = 1;     % Which number denotes the robot
 global DESTINATION; DESTINATION = -1;    % Which number denotes the destination
-global DATA_LEN;    DATA_LEN    = 10000;  % How much data should be generated from generateData()
-global TEST_LEN;    TEST_LEN    = 1000;  % How many random instances of data should be generated to test accuracy
+global DATA_LEN;    DATA_LEN    = 5000;  % How much data should be generated from generateData()
+global TEST_LEN;    TEST_LEN    = 50;  % How many random instances of data should be generated to test accuracy
 global ANIM_DELAY;  ANIM_DELAY  = .25;   % How long the delay between animation frames is
- 
+
+% Reinforcement Learning
+reinforcementHybrid()
+
 % Delta Method 
-model = delta("discr", false); % Get a Delta Method model without popularity and using Discriminant Analysis
+% model = delta("discr", false); % Get a Delta Method model without popularity and using Discriminant Analysis
                                % Should take a minute to train
-animateModel(model, 50);       % Animate 50 paths of the model
+% animateModel(model, 50);       % Animate 50 paths of the model
 
 % Delta Iteration Method
 % models = deltaIteration("discr");
@@ -28,6 +31,118 @@ animateModel(model, 50);       % Animate 50 paths of the model
 % Prediction Iteration Method
 % models = predictionIteration("knn");
 % animateModelIter(models, 50);
+
+function reinforcementHybrid()
+    % Variables
+    global DATA_LEN;
+    global BOARD_ROWS;
+    global BOARD_COLS;
+    global ROBOT;
+    global DESTINATION;
+    
+    RL_R_Row = [0];  RL_R_Col  = [0];
+    RL_D_Row = [0];  RL_D_Col  = [0];
+    RL_Move  = [0];  RL_Reward = [0];
+    % 1 = up
+    % 2 = down
+    % 3 = left
+    % 4 = right
+    
+    % Theorectically try every action for each instance to try to learn
+    [robotRows, robotCols, destRows, destCols] = generateData(DATA_LEN);
+    for i = 1:DATA_LEN*4 % *4 because we must check all 4 possible actions
+         index = ceil(i/4) % Adjust index to account for the *4
+         preDistance  = abs(robotRows(index) - destRows(index)) + abs(robotCols(index) - destCols(index)); % Distance before move
+         postDistance = 0; % Distance after move
+         move = 0;
+         RL_R_Row(i) = robotRows(index);
+         RL_R_Col(i) = robotCols(index);
+         RL_D_Row(i) = destRows(index);
+         RL_D_Col(i) = destCols(index);
+         
+         if     rem(i,4) == 1
+             RL_Move(i) = 1;
+             postDistance = abs(robotRows(index) - 1 - destRows(index)) + abs(robotCols(index) - destCols(index));
+         elseif rem(i,4) == 2
+             RL_Move(i) = 2;
+             postDistance = abs(robotRows(index) + 1 - destRows(index)) + abs(robotCols(index) - destCols(index));
+         elseif rem(i,4) == 3
+             RL_Move(i) = 3;
+             postDistance = abs(robotRows(index) - destRows(index)) + abs(robotCols(index) - 1 - destCols(index));
+         else
+             RL_Move(i) = 4;
+             postDistance = abs(robotRows(index) - destRows(index)) + abs(robotCols(index) + 1 - destCols(index));
+         end
+         
+         if(postDistance < preDistance)
+             RL_Reward(i) = 1;  % Move made distance shorter, good job
+         else
+             RL_Reward(i) = -1; % Move made distance longer,  bad  job
+         end
+    end
+    
+    % m = zeros(6, 6);
+    % m(RL_R_Row(1), RL_R_Col(1)) = 1;
+    % m(RL_D_Row(1), RL_D_Col(1)) = -1;
+    
+    data = table(RL_R_Row', RL_R_Col', RL_D_Row', RL_D_Col', RL_Move', RL_Reward');
+    data.Properties.VariableNames = {'RobotRow' 'RobotCol' 'DestRow' 'DestCol' 'Move' 'Reward'};
+    
+    % Create a model
+    model = fitctree(data, 'Reward')
+    
+    % Test model
+    [rr, rc, dr, dc] = generateData(1000);
+    pause on;
+    numRight = 0;
+    for i = 1:1000
+        board = zeros(BOARD_ROWS, BOARD_COLS);
+        board(rr(i), rc(i)) = ROBOT;
+        board(dr(i), dc(i)) = DESTINATION;
+        showBoard(board);
+        
+        valid = false;
+        x = 0;
+        while(~valid)
+            [RR, RC, DR, DC] = findCoords(board);
+            upFeatures    = [RR,RC,DR,DC,1];
+            downFeatures  = [RR,RC,DR,DC,2];
+            leftFeatures  = [RR,RC,DR,DC,3];
+            rightFeatures = [RR,RC,DR,DC,4];
+            if(predict(model, upFeatures) == 1)
+                board = moveRobot(board, "up");
+            elseif(predict(model, downFeatures) == 1)
+                board = moveRobot(board, "down");
+            elseif(predict(model, leftFeatures) == 1)
+                board = moveRobot(board, "left");
+            elseif(predict(model, rightFeatures) == 1)
+                board = moveRobot(board, "right");
+            end
+            x = x + 1;
+            showBoard(board);
+            pause(.05);
+            
+            % Update Valid
+            found = false;
+            for row = (1:BOARD_ROWS)
+                for col = (1:BOARD_COLS)
+                    if (board(row,col) == DESTINATION)
+                        found = true;
+                    end
+                end
+            end
+            valid = ~found;
+            if valid
+                numRight = numRight + 1; 
+            end
+            if x > BOARD_ROWS + BOARD_COLS
+                valid = true;
+            end
+        end
+    end
+    numRight
+    p = numRight / 1000
+end
 
 function models = deltaIteration(modelType)
     % Variables
@@ -166,12 +281,12 @@ function models = predictionIteration(modelType)
         models{iteration} = model;
     end
     
-    trainTime = toc; % Model trained, clock in timer
+    % trainTime = toc; % Model trained, clock in timer
     
-    modelAccuracy = calcAccuracyIter(models); % Test accuracy of model
+    % modelAccuracy = calcAccuracyIter(models); % Test accuracy of model
     
     % Data logging info
-    fprintf("%d,%d,%d,%s,%.2f,%.2f\n", BOARD_ROWS, BOARD_COLS, DATA_LEN, modelType, trainTime, (modelAccuracy*100));
+    % fprintf("%d,%d,%d,%s,%.2f,%.2f\n", BOARD_ROWS, BOARD_COLS, DATA_LEN, modelType, trainTime, (modelAccuracy*100));
 end
 
 % Trains a model based on the delta method of previous iterations
@@ -749,3 +864,8 @@ end
 %     % fprintf("Board: %dx%d\tTrain Data Length: %d\tModel Type: %s\tTrain Time: %d\tAccuracy: %d", BOARD_ROWS, BOARD_COLS, DATA_LEN, modelType, trainTime, modelAccuracy);
 %     fprintf("%d,%d,%d,%s,%.2f,%.2f\n", BOARD_ROWS, BOARD_COLS, DATA_LEN, modelType, trainTime, (modelAccuracy*100));
 %}
+
+
+% m = zeros(6, 6);
+% m(robotRows(i), robotCols(i)) = 1;
+% m(destRows(i), destCols(i)) = -1
