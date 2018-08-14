@@ -358,14 +358,14 @@ LAUCalTagGLObject::LAUCalTagGLObject(QObject *parent) : QObject(parent), isValid
     timer.start(); // BEGIN TIMER TO CALCULATE ELAPSED TIME
 
     // CLEAR DIRECTION.TXT TO PREPARE FOR NEW DATA LOG
-    QFile file(QString("direction.txt"));
-    if (file.open(QIODevice::WriteOnly)) {
-        QTextStream stream(&file);
-        stream << QString("");
-        file.close();
-    } else {
-        qDebug() << "Direction file could not be opened";
-    }
+    // QFile file(QString("direction.txt"));
+    // if (file.open(QIODevice::WriteOnly)) {
+    //     QTextStream stream(&file);
+    //     stream << QString("");
+    //     file.close();
+    // } else {
+    //     qDebug() << "Direction file could not be opened";
+    // }
     // END SAM'S CODE
 }
 
@@ -1137,7 +1137,7 @@ cv::Mat LAUCalTagGLObject::detectCalTagGrid(LAUMemoryObject sbObj, LAUMemoryObje
             localTransform = findBestQuadraticMapping(fmPoints, toPoints, inObj.width(), inObj.height(), CALTAGPOLYNOMIALORDER);
 
             // SAM'S CODE
-            findDirection(dirImage, pairings);
+            environment(dirImage, pairings);
             // END SAM'S CODE
 
             if (okay) {
@@ -1159,6 +1159,55 @@ cv::Mat LAUCalTagGLObject::detectCalTagGrid(LAUMemoryObject sbObj, LAUMemoryObje
     }
     return (localTransform);
 }
+
+/***************************************************************************/
+/*******************************SAM'S CODE**********************************/
+/***************************************************************************/
+void LAUCalTagGLObject::environment(cv::Mat img, QList<Pairing> pairings)
+{
+    // DECLARATIONS/INITIALIZATIONS
+    cv::Point2f origin; origin.x = NAN; origin.y = NAN; // POINT: (0,0)
+    cv::Point2f dPoint; dPoint.x = NAN; dPoint.y = NAN; // POINT: (0,1) [DIRECTION POINT]
+    bool valid = false;                                 // TRUE WHEN BOTH ORIGIN AND DPOINT ARE FOUND
+
+    // LOOP THROUGH PAIRINGS TO SEE IF (0,0) OR (0,1) WERE CAPTURED
+    QList<LAUCalTagGLObject::Pairing>::iterator i;
+    for (i = pairings.begin(); i != pairings.end(); ++i){
+        cv::circle(img, cv::Point2f(i->cr.x(), i->cr.y()), 2, cv::Scalar(0, 0, 255), -1); // APPLY A RED DOT TO EVERY CAPTURED COORDINATE
+        if(i->xy.x() == 0 && i->xy.y() == 0){ // XY: (0,0) WAS CAPTURED, SET THE ORIGIN PIXEL LOCATION
+            origin = cv::Point2f(i->cr.x(), i->cr.y());
+        }
+        if(i->xy.x() == 0 && i->xy.y() == 1){ // XY: (0,1) WAS CAPTURED, SET THE DPOINT PIXEL LOCATION
+            dPoint = cv::Point2f(i->cr.x(), i->cr.y());
+        }
+    }
+
+    // CHECK IF DESTINATION FILE HAS INFO ON IMAGINARY DESTINATION
+    // TO BE IMPLEMENTED
+
+    // CALCULATE AND DRAW DIRECTION VECTOR
+    if(!qIsNaN(origin.x) && !qIsNaN(dPoint.x)){ // ORIGIN AND DPOINT WERE BOTH CAPTURED, DISPLAY AN ARROW FOR THE DIRECTION AND SET VALID TO TRUE
+        cv::arrowedLine(img, origin, dPoint, cv::Scalar(0, 255, 255), 2);
+        valid = true;
+    }
+
+    // RECORD ROBOT LOCATION
+    // < ORIGIN.X, ORIGIN.Y, DPOINT.X, DPOINT.Y >
+    QString toPrint = QString("");
+    toPrint += QString("%1 %2 ").arg(origin.x).arg(origin.y); // ORIGIN PIXEL COORDINATES
+    toPrint += QString("%1 %2 ").arg(dPoint.x).arg(dPoint.y); // DPOINT PIXEL COORDINATES
+    QFile file(QString("robot.txt"));
+    if (valid && file.open(QIODevice::WriteOnly | QIODevice::Text)) {
+        QTextStream stream(&file);
+        stream << toPrint << endl;
+        file.close();
+    } else {
+        qDebug() << "Robot file could not be opened [robot.txt]";
+    }
+
+    // Show Environment
+    cv::imshow("Environment", img);
+} // END SAM'S CODE
 
 /***************************************************************************/
 /*******************************SAM'S CODE**********************************/

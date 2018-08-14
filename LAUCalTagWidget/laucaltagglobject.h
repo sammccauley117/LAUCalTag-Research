@@ -250,6 +250,7 @@ private:
     cv::vector<cv::vector<cv::Point2f>> organizeSquares(cv::vector<cv::vector<cv::Point2f>> squares);
 
     // Sam's Code
+    void environment  (cv::Mat img, QList<LAUCalTagGLObject::Pairing> pairings);
     void findDirection(cv::Mat img, QList<LAUCalTagGLObject::Pairing> pairings);
     // End Sam's Code
 
