@@ -9,33 +9,40 @@ classdef Robot < handle
         DATA_BITS     = 8;
         STOP_BITS     = 1;
         MIN_PAUSE     = .25; % Minimum ammount of time between Serial Writes (to not overflow Arduino buffer) 
+        SPEED_FACTOR  = .1;  % Forward movement speed is relatively arbitrary without a perspective of size
 
         x; y;       % (x, y) of origin of Robot
         dirX; dirY; % (x, y) of pointing direction
         angle;      % Pointing angle of Robot [0 - 360)
-        size;       % Estimate of the size of the robot
+        size = 50;  % Estimate of the size of the robot
         serial;     % Serial Port connection
         valid = -1; % Whether or not instance of Robot is useable
     end
     
     methods
         % Constructor
-        function obj = Robot()
-            % Establish Serial Connection
-            instrreset; % Clear any existing connections
-            obj.serial = serial(obj.COM_PORT); % Create Serial Object
-            set(obj.serial,'BaudRate',obj.BAUD_RATE);
-            set(obj.serial,'DataBits',obj.DATA_BITS);
-            set(obj.serial,'StopBits',obj.STOP_BITS);
-            set(obj.serial,'Parity','none');
-            fopen(obj.serial);  % Open Serial
-            pause on; 
-            pause(2); % Wait ~2 seconds to wait for stable connection
-            tic; % Start write timer
-            
-            % Update robot environment variables
-            obj.update();
+        function obj = Robot(x, y, angle)
+            obj.x = x;
+            obj.y = y;
+            obj.angle = angle; 
         end
+        
+%         function obj = Robot()
+%             % Establish Serial Connection
+%             instrreset; % Clear any existing connections
+%             obj.serial = serial(obj.COM_PORT); % Create Serial Object
+%             set(obj.serial,'BaudRate',obj.BAUD_RATE);
+%             set(obj.serial,'DataBits',obj.DATA_BITS);
+%             set(obj.serial,'StopBits',obj.STOP_BITS);
+%             set(obj.serial,'Parity','none');
+%             fopen(obj.serial);  % Open Serial
+%             pause on; 
+%             pause(2); % Wait ~2 seconds to wait for stable connection
+%             tic; % Start write timer
+%             
+%             % Update robot environment variables
+%             obj.update();
+%         end
         
         % Write left and right commands to the motors
         function writeMotors(obj, left, right)
@@ -88,6 +95,68 @@ classdef Robot < handle
                 R = obj.toCommand('b', magnitude);
                 obj.writeMotors(L, R);
             end
+        end
+        
+        function moveMotors(obj, left, right, show)
+            % Set up plot
+            if show
+                clf;
+                axis([0 640 0 640]);
+                axis square;
+                hold on
+                plot(obj.x, obj.y, 'r*');
+            end
+            
+            % Special Cases
+            if left == right
+                obj.x = obj.x + (left * cosd(obj.angle));
+                obj.y = obj.y + (left * sind(obj.angle));
+            else
+                if right > left
+                    r = -1 * (left*obj.size) / (left - right);
+                    theta = (57.29577951*left) / r;
+                    turnCenterX = obj.x - ((obj.size/2) * cosd(obj.angle - 90)) - (r * cosd(obj.angle - 90));
+                    turnCenterY = obj.y - ((obj.size/2) * sind(obj.angle - 90)) - (r * sind(obj.angle - 90));   
+                    dx = (obj.x - turnCenterX) * cosd(-theta) + (obj.y - turnCenterY) * sind(-theta);
+                    dy = (obj.x - turnCenterX) * sind(-theta) - (obj.y - turnCenterY) * cosd(-theta);
+                    obj.x = turnCenterX + dx;
+                    obj.y = turnCenterY - dy;
+                    obj.angle = obj.angle + theta;
+                    fprintf("INCORRECT\nturnCenterX: %f\nturnCenterY: %f\ndx: %f\ndy: %f\n", turnCenterX, turnCenterY, dx, dy);
+                else 
+                    r = -1 * (right*obj.size) / (right - left);
+                    theta = (57.29577951*right) / r;
+                    turnCenterX = obj.x + ((obj.size/2) * cosd(obj.angle - 90)) + (r * cosd(obj.angle - 90));
+                    turnCenterY = obj.y + ((obj.size/2) * sind(obj.angle - 90)) + (r * sind(obj.angle - 90)); 
+                    dx = (obj.x - turnCenterX) * cosd(-theta) - (obj.y - turnCenterY) * sind(-theta);
+                    dy = (obj.x - turnCenterX) * sind(-theta) + (obj.y - turnCenterY) * cosd(-theta);
+                    obj.x = turnCenterX + dx;
+                    obj.y = turnCenterY + dy;
+                    obj.angle = obj.angle - theta;
+                    fprintf("CORRECT\nturnCenterX: %f\nturnCenterY: %f\ndx: %f\ndy: %f\n", turnCenterX, turnCenterY, dx, dy);
+                end
+                if show
+                    obj.c(turnCenterX, turnCenterY, r, 'black');
+                    obj.c(turnCenterX, turnCenterY, (r+obj.size), 'black');
+                    obj.c(obj.x, obj.y, obj.size/2, 'blue');
+                    obj.c(turnCenterX, turnCenterY, (r+(obj.size/2)), 'green');
+                end
+            end
+            
+            % Show Robot
+            if show
+                plot([obj.x (obj.x + obj.size * cosd(obj.angle))], [obj.y (obj.y + obj.size * sind(obj.angle))], 'r');
+                hold off;
+            end
+        end
+        
+        % Circle
+        function h = c(obj, x, y, r, color)
+            d = r*2;
+            px = x-r;
+            py = y-r;
+            h = rectangle('Position',[px py d d],'Curvature',[1,1],...
+                'EdgeColor', color);
         end
         
         % Creates 8-bit control command to send to the Robot
