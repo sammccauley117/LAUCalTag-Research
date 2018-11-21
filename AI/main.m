@@ -4,31 +4,95 @@ global TRAIN_LEN; TRAIN_LEN = 100000; % Ammount of train data
 global CW;        CW        = 1;      % Classifier for CW rotation
 global CCW;       CCW       = 0;      % Classifier for CCW rotation
 
-% Train Model
-moveSkill = trainMove()
-turnSkill = trainTurn()
 
 
 % Generate Destination
 d = Destination([400, 400]);
-r = Robot();
-
-% Test
-pause on
+r = Robot(200,200,45);
 while 1
-    r.update();
-    f = [(d.x - r.x) (d.y - r.y) r.angle];
+    move(r, rand*50, rand*50, 1)
+end 
+% Test
+% pause on
+% while 1
+%     r.update();
+%     f = [(d.x - r.x) (d.y - r.y) r.angle];
+%     
+%     if predict(moveSkill, f) == 1
+%         r.move(50);
+%     end
+%     
+%     for i = 1:50
+%         show(r, d);
+%         pause(1/200);
+%     end
+% end
+% show(r, d);
+
+function model = trainMotors()
+    % Variables
+    global WIDTH;
+    global HEIGHT;
+    global TRAIN_LEN;
+    global CW;
+    global CCW;
     
-    if predict(moveSkill, f) == 1
-        r.move(50);
+    % Features and Label
+    dx    = zeros(TRAIN_LEN, 1); % Delta X: (Destination X - Robot X)
+    dy    = zeros(TRAIN_LEN, 1); % Delta Y: (Destination Y - Robot Y)
+    ra    = zeros(TRAIN_LEN, 1); % Robot Angle 
+    dir   = zeros(TRAIN_LEN, 1); % Turn Direction: 1 = CW, 0 = CCW
+    label = zeros(TRAIN_LEN, 1); % Training Label: 1 = Good Move, 0 = Bad Move
+    
+    for i = 1:TRAIN_LEN
+        % Generate Delta X and Delta Y
+        while 1
+            robotX = rand * WIDTH;
+            robotY = rand * HEIGHT;
+            destX  = rand * WIDTH;
+            destY  = rand * HEIGHT;
+            dx(i)  = destX - robotX;
+            dy(i)  = destY - robotY;
+            if dx(i) ~= 0 || dy(i) ~= 0 % Make sure they aren't at the same location
+                break;
+            end
+        end
+        
+        % Generate random Robot Angle (0 - 360)
+        ra(i) = rand * 360;
+        
+        % Pick a random direction to test
+        dir(i) = int8(rand * 1);
+        
+        % Label turn
+        angleBefore = angleBetween(dx(i), dy(i), ra(i)); % Angle between Robot to Destination and Robot's pointing angle before turning
+        % Simulate turn
+        if dir(i) == CW 
+            raTurn = rem(ra(i) - .1, 360); % The robot's pointing angle after small CW turn
+            angleAfter = angleBetween(dx(i), dy(i), raTurn);
+        elseif dir(i) == CCW
+            raTurn = rem(ra(i) + .1, 360); % The robot's pointing angle after small CW turn
+            angleAfter = angleBetween(dx(i), dy(i), raTurn);
+        end
+        % Check if the turn reduced the angle between
+        label(i) = angleBefore > angleAfter;
     end
     
-    for i = 1:50
-        show(r, d);
-        pause(1/200);
-    end
+    trainData = table(dx, dy, ra, dir, label);
+    trainData.Properties.VariableNames = {'DeltaX' 'DeltaY' 'RobotAngle' 'Direction' 'Label'};
+    model = fitctree(trainData, 'Label');
+    
+    % Uncomment to view data
+    % for i = 1:TRAIN_LEN
+    %     clf;
+    %     axis([-640 640 -640 640]);
+    %     hold on;
+    %     plot([0 dx(i)], [0 dy(i)], 'r')
+    %     plot([0 (100 * cosd(ra(i)))], [0 (100 * sind(ra(i)))], 'g');
+    %     hold off;
+    %     waitforbuttonpress;
+    % end
 end
-show(r, d);
 
 function model = trainTurn()
     % Variables
@@ -156,6 +220,20 @@ function angle = angleBetween(dx, dy, ra)
     angle = acosd(PdotB / (pMag * bMag));
 end
 
+function move(r, left, right, show)
+    DIVISOR = 10;
+    if show
+        pause on;
+        for i = 1:DIVISOR
+            r.moveMotors(left/DIVISOR, right/DIVISOR, show);
+            pause(.1);
+        end
+        pause off;
+    else
+        r.moveMotors(left, right, show);
+    end
+end
+
 function show(r, d)
     % Set up grid
     clf;
@@ -178,74 +256,4 @@ function show(r, d)
     % Show destination
     d.show();
 end
-    
-
-
-
-
-
-
-
-
-% r = Robot();
-% SPEED = 50;
-% MOVES = 5;
-% FRAMES = 15;
-% pause on;
-
-
-
-% for i = 1:MOVES
-%     r.update();
-%     show(r);
-%     r.move(SPEED);
-% end
-% 
-% for i = 1:FRAMES
-%     r.update();
-%     show(r);
-%     pause(1/FRAMES);
-% end
-% 
-% for i = 1:MOVES
-%     r.update();
-%     show(r);
-%     r.turnCW(SPEED);
-% end
-% 
-% for i = 1:MOVES
-%     r.update();
-%     show(r);
-%     r.turnCCW(SPEED);
-% end
-% 
-% for i = 1:MOVES
-%     r.update();
-%     show(r);
-%     r.turnCCW(SPEED);
-% end
-% 
-% for i = 1:FRAMES
-%     r.update();
-%     show(r);
-%     pause(1/FRAMES);
-% end
-% 
-% for i = 1:MOVES
-%     r.update();
-%     show(r);
-%     r.turnCW(SPEED);
-% end
-% 
-% for i = 1:FRAMES
-%     r.update();
-%     show(r);
-%     pause(1/FRAMES);
-% end
-% 
-% for i = 1:10
-%     r.update();
-%     show(r);
-%     r.move(-1 * SPEED);
-% end
     
