@@ -42,7 +42,7 @@ win32 {
 
 ## Part 4: Linker Issues
 ##### Option 1 (Preferred)
-Finally You do need to copy over any external DLLs that you may have included in your .pro file. After building the project, a 'debug' folder should appear in your build directory. Find the following files and paste them in your debug folder:
+Finally, you do need to copy over any external .dll's that you may have included in your .pro file. After building the project, a 'debug' folder should appear in your build directory. Find the following files and paste them in your debug folder:
 
 |Missing .dll Name|File Location|
 |:---------------:|:-----------:|
