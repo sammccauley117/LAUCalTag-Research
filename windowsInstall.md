@@ -41,7 +41,16 @@ win32 {
 11. Now run 'Build'. Note: if you get build errors saying `#include "opencv2/core/core.hpp"` and `#include "libbtiff.h"` don't exist even after adding them to your `INCLUDEPATH`, try running `Build>Run qmake`
 
 ## Part 4: Linker Issues
-After building the project, a 'debug' folder should appear in your build directory. Open this folder in your File Explorer and run `LAUWebCalTag.exe`. You will get five errors such as "The code executation cannot proceed because libtiff.dll was not found. Reinstalling the program may fix this problem". These are the first five missing .dll's that the program can't find. You are going to have to find where these .dll's exist and copy them into the same directory as `LAUWebCalTag.exe`--the debug directory. Below is a table of what I was missing and where I found them. It may be different for you. Also be sure to verify that the .dll is the correct architecture (x64).
+##### Option 1 (Preferred)
+Finally You do need to copy over any external DLLs that you may have included in your .pro file. After building the project, a 'debug' folder should appear in your build directory. Find the following files and paste them in your debug folder:
+
+|Missing .dll Name|File Location|
+|:---------------:|:-----------:|
+|libtiff.dll|C:\\...\tiff-4.0\libtiff|
+|opencv_world310.dll|C:\\...\opencv\build\x64\vc14\bin|
+|opencv_world310d.dll|C:\\...\opencv\build\x64\vc14\bin|
+##### Option 2
+This option is for if you wish to run the executable as a standalone--outside of Qt. Open your debug folder in your File Explorer and run `LAUWebCalTag.exe`. You will get five errors such as "The code executation cannot proceed because libtiff.dll was not found. Reinstalling the program may fix this problem". These are the first five missing .dll's that the program can't find. You are going to have to find where these .dll's exist and copy them into the same directory as `LAUWebCalTag.exe`--the debug directory. Below is a table of what I was missing and where I found them. It may be different for you. Also be sure to verify that the .dll is the correct architecture (x64).
 
 |Missing .dll Name|File Location|
 |:---------------:|:-----------:|
@@ -54,4 +63,4 @@ After building the project, a 'debug' folder should appear in your build directo
 |Qt5Networkdd.dll|C:\Qt\5.11.0\mscv2015_64\bin|
 |ucrtbased.dll|C:\Program Files (x86)\Windows Kits\10\bin\x64\ucrt|
 
-After adding the .dll's, the executable should launch successfully.
+After adding the .dll's, the executable in your debug folder should launch successfully.
